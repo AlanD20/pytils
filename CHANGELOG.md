@@ -1,5 +1,11 @@
 # Changelog
 
+### Apr 27 2024 - v0.2.0
+
+- `CassandraConnect` class wrapper connection
+- Add a few methods to `MysqlConnect` class:
+   - `health_check` to check mysql connection status.
+   - `get_last_error` to get last exception thrown.
 
 ### Apr 6 2024 - v0.1.0
 

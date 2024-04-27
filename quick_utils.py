@@ -3,8 +3,17 @@ import random
 import struct
 import socket
 from datetime import datetime
+from cassandra.cluster import (
+    EXEC_PROFILE_DEFAULT,
+    Cluster,
+    ExecutionProfile,
+    ConsistencyLevel,
+)
+from cassandra.query import BatchStatement, named_tuple_factory
+from cassandra.auth import PlainTextAuthProvider
 from typing import Dict
 
+from pymysql import Connect
 import pymysql.cursors
 
 
@@ -79,19 +88,148 @@ class MysqlConnect:
         self.connection.close()
 
     def statement(self, sql: str, params=()) -> bool:
-        cursor = self.connection.cursor()
-        result = cursor.execute(sql, params)
-        cursor.close()
-        self.connection.commit()
+        try:
+            cursor = self.connection.cursor()
+            result = cursor.execute(sql, params)
+            cursor.close()
+            self.connection.commit()
 
-        return bool(result)
+            return bool(result)
+        except Exception as e:
+            self.error = e
+            return False
 
     def get(self, sql: str, params=()):
-        with self.connection.cursor() as cursor:
-            cursor.execute(sql, params)
-            return cursor.fetchone()
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(sql, params)
+                return cursor.fetchone()
+        except Exception as e:
+            self.error = e
+            return False
 
     def select(self, sql: str, params=()):
-        with self.connection.cursor() as cursor:
-            cursor.execute(sql, params)
-            return cursor.fetchall()
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(sql, params)
+                return cursor.fetchall()
+        except Exception as e:
+            self.error = e
+            return False
+
+    def health_check(self, reconnect: bool = False) -> bool:
+        try:
+            self.connection.ping(reconnect)
+            return True
+        except Exception as e:
+            self.error = e
+            return False
+
+    def get_last_error(self) -> Exception:
+        return self.error
+
+    def get_connection(self) -> Connect:
+        return self.connection
+
+
+class CassandraConnect:
+    """
+    Cassandra Driver Documentation:
+    https://docs.datastax.com/en/developer/python-driver/3.25/getting_started/
+    """
+
+    def __init__(
+        self,
+        hosts: list[str],
+        keyspace: str,
+        user: str,
+        password: str,
+        port: int = 9042,
+        row_format=named_tuple_factory,
+        consistency_level: str = "QUORUM",
+        timeout=30,
+    ) -> None:
+
+        self.timeout = timeout
+
+        auth = PlainTextAuthProvider(username=user, password=password)
+
+        # Validate consistency level
+        try:
+            self.consistency_value = ConsistencyLevel.name_to_value[
+                consistency_level.upper()
+            ]
+        except AttributeError:
+            raise ValueError("invalid consistency level passed to Cassandra")
+
+        profile = ExecutionProfile(
+            consistency_level=self.consistency_value,
+            request_timeout=self.timeout,
+            row_factory=row_format,
+        )
+
+        self.cluster = Cluster(
+            contact_points=hosts,
+            port=port,
+            auth_provider=auth,
+            execution_profiles={EXEC_PROFILE_DEFAULT: profile},
+        )
+
+        self.keyspace = keyspace
+
+        self.session = self.cluster.connect(keyspace=keyspace)
+
+    def switch_keyspace(self, keyspace: str) -> None:
+        self.keyspace = keyspace
+        self.session.set_keyspace(keyspace)
+
+    def close(self) -> None:
+        self.session.shutdown()
+
+    def statement(self, cql: str | BatchStatement, params=()) -> bool:
+        result = self.session.execute(cql, params)
+        return bool(result)
+
+    def get_batch(
+        self,
+    ) -> BatchStatement:
+        batch = BatchStatement(
+            consistency_level=self.consistency_value, session=self.session
+        )
+        return batch
+
+    def get(self, cql: str, params=()):
+        """
+        Rows are named tuples. Following are valid access
+
+        rows = instance.get("SELECT name, age, email FROM users")
+
+        for row in rows:
+            print(row.name, row.age, row.email)
+
+        for (name, age, email) in rows:
+            print(row.name, row.age, row.email)
+
+        for row in rows:
+            print(row[0], row[1], row[2])
+        """
+        result = self.session.execute(cql, params)
+        return result.one()
+
+    def select(self, cql: str, params=()):
+        """
+        Rows are named tuples. Following are valid access
+
+        rows = instance.get("SELECT name, age, email FROM users")
+
+        for row in rows:
+            print(row.name, row.age, row.email)
+
+        for (name, age, email) in rows:
+            print(row.name, row.age, row.email)
+
+        for row in rows:
+            print(row[0], row[1], row[2])
+        """
+        result = self.session.execute(cql, params)
+        return result

@@ -75,12 +75,57 @@ args = parser.parse_args()
 config = LoadJsonFile(args.config)
 
 ```
+
+### CassandraConnect
+
+```python
+cass_conn = _.CassandraConnect(
+    hosts=['127.0.0.1'],
+    keyspace='dev',
+    user='cassandra',
+    password='cassandra',
+    port=9042,
+    consistency_level='QUORUM',
 )
 
+# CQL statements
+cass_conn.statement(
+    """
+        CREATE TABLE IF NOT EXISTS users_by_roles (
+            role text,
+            name text,
+            email text,
+            PRIMARY KEY((role), name)
+        );
+    """
+)
+
+# Executing batches
+batch = cass_conn.get_batch()
+
+batch.add(
+    "INSERT INTO users_by_roles (role, name, email) VALUES ('admin', 'aland20', 'aland20@pm.me');"
+)
+batch.add(
+    "INSERT INTO users_by_roles (role, name, email) VALUES ('admin', 'john', 'john@example.com');"
+)
+batch.add(
+    "INSERT INTO users_by_roles (role, name, email) VALUES ('admin', 'jack', 'jack@example.com');"
+)
+batch.add(
+    "INSERT INTO users_by_roles (role, name, email) VALUES ('admin', 'johnny', 'johnny@example.com');"
+)
+
+cass_conn.statement(batch)
 
 
+# Select query
+users = cass_conn.select("SELECT * FROM users_by_roles;")
+for role, name, email in users:
+    print(f"Name: {name}, Role: {role}, Email: {email}")
 
-
+# Get query
+user = cass_conn.get("SELECT * FROM users_by_roles WHERE role = 'admin' AND name = 'aland20';")
 ```
 
 ## License

@@ -5,5 +5,15 @@
     "user": "root",
     "password": "",
     "port": 3306
+  },
+  "cassandra": {
+    "hosts": [
+      "127.0.0.1"
+    ],
+    "user": "cassandra",
+    "password": "cassandra",
+    "port": 9042,
+    "keyspace": "dev",
+    "consistency_level": "QUORUM"
   }
 }
